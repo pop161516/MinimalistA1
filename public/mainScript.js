@@ -1,182 +1,152 @@
-
-//----------------------------------------------------//
-//access canvas
+// --- Setup Canvas ---
 const canvas = document.getElementById('cnv_element');
 const ctx = canvas.getContext('2d');
-
-//--------------------------------------------------------------------------------//
-//Checking gyro API works(for pop-up)
-//code sorced from Google Gemini AI
-if (window.DeviceOrientationEvent) {
-    if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-      DeviceOrientationEvent.requestPermission()
-        .then(permissionState => {
-          if (permissionState === 'granted') {
-            window.addEventListener('deviceorientation', handlePopUpOrientation);
-          } else {
-            console.log('Device orientation permission not granted.');
-          }
-        })
-        .catch(console.error);
-    } else {
-      window.addEventListener('deviceorientation', handlePopUpOrientation);
-    }
-
-  } else {
-    console.log("Device Orientation API is not supported on this device.");
-  }  
-
-//---------------------------------------------------------------------------------------------------------------------------------//
-//Gyro for intro element
-
-//bibliography: 
-//https://developer.mozilla.org/en-US/docs/Web/API/Gyroscope
-// https://youtu.be/bNmhX9464t4
-
-const introElement = document.getElementById('interactiveElement');
-
-  function handlePopUpOrientation(event) {
-    //left right
-    const alpha = event.alpha; 
-    //forward backward
-    const beta = event.beta; 
-    //spin around
-    const gamma = event.gamma;
-
-    if (introElement) {
-      introElement.style.transform = `translate(-50%, -50%) rotateY(${-gamma}deg) rotateX(${beta - 90}deg) rotateZ(${alpha + 90}deg)`;
-    }
-  }
-//--------------------------------------------------//
-//killing intro element using css
-introElement.addEventListener("click", disappear);
-
-  function disappear() {
-    introElement.style.display = "none";
-    console.log(`intro element closed :)`)
-}
-
-//---------------------------------------------------------------------------------//
-//sketch, inspiered by https://www.youtube.com/watch?v=OJSzIaRRxG8 
-
 let width = window.innerWidth;
 let height = window.innerHeight;
 canvas.width = width;
 canvas.height = height;
 
-let g = 1;
-let pendulums = [];
-let num = 20;
-let frameCount = 0;
+// --- Game Variables ---
+let player = { x: width / 2, y: height / 2 };
+let target = { x: 0, y: 0 };
+let gameStarted = false;
 
-// gyroscope data
-let alpha = 0;
-let beta = 0;
-let gamma = 0;
+let lastVibrate = 0;
 
-// Web Audio API setup
-const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-const oscillators = []; // Array to store oscillators for each pendulum
-const masterGainNode = audioContext.createGain();  //Master gain
-masterGainNode.connect(audioContext.destination);
-masterGainNode.gain.value = 0.1; //Quieter sound
+// Movement variables (Accelerometers are noisy, so we use "friction" to stabilize)
+let posX = 0; 
+let posY = 0;
+let velX = 0;
+let velY = 0;
 
+// --- Audio Setup ---
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+let oscillator = null;
+let gainNode = null;
 
-//------------ set up ------------//
-function setup() {
-  //making num pendulums
-  for (let i = 0; i < num; i++) {
-    //starting position, offset a little for variation
-    let angle1 = Math.PI / 4 + i * 0.05;
-    let angle2 = Math.PI;
-    //instance each pendulum using a class
-    pendulums[i] = new Pendulum(angle1, angle2, 150, 150);
-    pendulums[i].setCanvasDimensions(width, height);
-    pendulums[i].currentG = g;
-
-    //sound!!
-    const oscillator = audioContext.createOscillator();
-    oscillator.type = 'sine';  // You can change the waveform (sine, square, sawtooth, triangle)
-    oscillator.frequency.setValueAtTime(500, audioContext.currentTime); // Initial frequency
-    const gainNode = audioContext.createGain();
-    gainNode.gain.setValueAtTime(0, audioContext.currentTime); // Start silent
+function initAudio() {
+    oscillator = audioCtx.createOscillator();
+    gainNode = audioCtx.createGain();
+    oscillator.type = 'sine';
+    oscillator.frequency.setValueAtTime(200, audioCtx.currentTime);
+    gainNode.gain.setValueAtTime(0, audioCtx.currentTime); // Start silent
     oscillator.connect(gainNode);
-    gainNode.connect(masterGainNode); // Connect to the master gain
+    gainNode.connect(audioCtx.destination);
     oscillator.start();
-    oscillators.push({ oscillator, gainNode }); // Store both
-  
-  canvas.addEventListener('touchstart', () => {
-    if (audioContext.state === 'suspended') {
-      audioContext.resume().then(() => {
-        console.log('AudioContext resumed (touchstart)');
-        oscillators.forEach(osc => {
-          osc.gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
-        });
-        constantGainNode.gain.setValueAtTime(0.1, audioContext.currentTime); //start constant
-      });
-    } else {
-      oscillators.forEach(osc => {
-        osc.gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
-      });
-      constantGainNode.gain.setValueAtTime(0.1, audioContext.currentTime); //start constant
-    }
-  }, { passive: true });
+}
 
+// --- Target Logic ---
+function setRandomTarget() {
+    const minDistance = 200;
+    let tx, ty, dist;
+    
+    do {
+        tx = Math.random() * width;
+        ty = Math.random() * height;
+        let dx = tx - (width / 2);
+        let dy = ty - (height / 2);
+        dist = Math.sqrt(dx * dx + dy * dy);
+    } while (dist < minDistance); // Keep picking until it's far enough away
 
-  }
+    target.x = tx;
+    target.y = ty;
+}
 
-//------- gyro compatibility -------//
-//code sorced from Google Gemini AI
-  if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-    DeviceOrientationEvent.requestPermission().then(permissionState => {
-      if (permissionState === 'granted') {
-        window.addEventListener('deviceorientation', handlePenOrientation);
-      } else {
-        console.warn('Permission denied for device orientation.');
+// --- Motion Handling ---
+function handleMotion(event) {
+    if (!gameStarted) return;
+
+    // acc.x is left/right, acc.y is forward/back
+    let acc = event.acceleration; // Use .acceleration (excludes gravity)
+    
+    // Basic physics: Velocity += Acceleration
+    // We add a heavy "friction" (0.9) so the player doesn't fly off screen
+    velX = (velX + acc.x) * 0.9;
+    velY = (velY - acc.y) * 0.9; // Y is inverted on screens
+
+    posX += velX;
+    posY += velY;
+
+    // Map the relative movement to the screen center
+    player.x = (width / 2) + (posX * 20); // Multiply by 20 for sensitivity
+    player.y = (height / 2) + (posY * 20);
+}
+
+function handleHaptics(distance) {
+    // Only vibrate if the player is within 100 pixels
+    if (distance < 100) {
+        let now = Date.now();
+        
+        // Create a "pulsing" effect: the closer you are, the faster it pulses
+        // Map distance (0-100) to an interval (100ms - 1000ms)
+        let interval = map(distance, 0, 100, 100, 1000);
+
+        if (now - lastVibrate > interval) {
+            // navigator.vibrate works on most modern browsers
+            // 50ms is a short "tap"
+            if (navigator.vibrate) {
+                navigator.vibrate(50);
+            }
+            lastVibrate = now;
         }
-    })
-    .catch(error => {
-      console.error('Error requesting device orientation permission:', error);
-    });
-    } else {
-    window.addEventListener('deviceorientation', handlePenOrientation);
     }
 }
 
-//------------- draw -------------//
+// --- Interaction (The "Start" Button) ---
+document.getElementById('start_button').addEventListener('click', async () => {
+    // 1. Request iOS Permissions
+    if (typeof DeviceMotionEvent.requestPermission === 'function') {
+        const state = await DeviceMotionEvent.requestPermission();
+        if (state !== 'granted') return alert("Permission needed!");
+    }
+
+    // 2. Resume Audio
+    if (audioCtx.state === 'suspended') await audioCtx.resume();
+    initAudio();
+    gainNode.gain.setTargetAtTime(0.1, audioCtx.currentTime, 0.1);
+
+    // 3. Initialize Game
+    setRandomTarget();
+    window.addEventListener('devicemotion', handleMotion);
+    gameStarted = true;
+    document.getElementById('start_button').style.display = 'none';
+    draw();
+});
+
+// --- Main Loop ---
 function draw() {
-  requestAnimationFrame(draw);
-  ctx.fillStyle = '#000000'; 
-  ctx.fillRect(0, 0, width, height);
+    if (!gameStarted) return;
+    requestAnimationFrame(draw);
 
-//draw and update each pendulum using a class
-  for (let i = 0; i < num; i++) {
-    pendulums[i].currentG = g; 
-    pendulums[i].update();
-    pendulums[i].display(ctx);
+    ctx.fillStyle = 'black';
+    ctx.fillRect(0, 0, width, height);
 
-    // Control frequency based on pendulum's y position
-    const y = pendulums[i].y2; // Y position of the second bob
-    const minFrequency = 150;  // Minimum frequency (adjust as needed)
-    const maxFrequency = 350; // Maximum frequency (adjust as needed)
-    const frequency = map(y, 0, height, maxFrequency, minFrequency); //Higher y = lower freq
-    oscillators[i].oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
-  
-  }
-  frameCount++;
+    // ... (Your player and target drawing code) ...
+
+    let dx = player.x - target.x;
+    let dy = player.y - target.y;
+    let distance = Math.sqrt(dx * dx + dy * dy);
+    
+    // 1. Update Sound
+    let maxDist = Math.sqrt(width**2 + height**2);
+    let freq = map(distance, 0, maxDist, 1200, 150);
+    oscillator.frequency.setTargetAtTime(freq, audioCtx.currentTime, 0.05);
+
+    // 2. Trigger Haptics
+    handleHaptics(distance);
+
+    // 3. Win Condition
+    if (distance < 25) {
+        ctx.fillStyle = "lime";
+        ctx.font = "bold 40px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText("TARGET FOUND!", width/2, height/2);
+        
+        // Long vibration for winning
+        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+    }
 }
 
-//------------- gyro -------------//
-//function called by gyro controles
-//maps beta(back adn forth) to the gravity 
-function handlePenOrientation(event) {
-  beta = event.beta;
-  g = map(beta, -90, 90, -2, 2);  
+function map(val, a1, a2, b1, b2) {
+    return b1 + (b2 - b1) * (val - a1) / (a2 - a1);
 }
-
-function map(value, a1, a2, g1, g2) {
-  return g1 + (g2 - g1) * (value - a1) / (a2 - a1);
-}
-
-setup();
-draw();
