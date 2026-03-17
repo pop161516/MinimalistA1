@@ -92,96 +92,95 @@
 
     <script>
         const player = document.getElementById('player');
-        const target = document.getElementById('target');
-        const startBtn = document.getElementById('start-btn');
-        const overlay = document.getElementById('overlay');
+const target = document.getElementById('target');
+const startBtn = document.getElementById('start-btn');
+const overlay = document.getElementById('overlay');
 
-        let playerPos = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-        let targetPos = { x: 0, y: 0 };
-        
-        // Audio Context (Web Audio API)
-        let audioCtx, oscillator, gainNode;
+let playerPos = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+let targetPos = { x: Math.random() * window.innerWidth, y: Math.random() * window.innerHeight };
+let originCoords = null; // Your starting point in the room
 
-        function initAudio() {
-            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            oscillator = audioCtx.createOscillator();
-            gainNode = audioCtx.createGain();
+// Sensitivity: Higher number = more movement on screen for every step taken
+const SENSITIVITY = 100000; 
 
-            oscillator.type = 'sine';
-            oscillator.frequency.setValueAtTime(220, audioCtx.currentTime); // Starting A note
-            
-            gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
-            
-            oscillator.connect(gainNode);
-            gainNode.connect(audioCtx.destination);
-            oscillator.start();
-        }
+let audioCtx, oscillator, gainNode;
 
-        function moveTarget() {
-            targetPos.x = Math.random() * (window.innerWidth - 50) + 25;
-            targetPos.y = Math.random() * (window.innerHeight - 50) + 25;
-            target.style.left = `${targetPos.x}px`;
-            target.style.top = `${targetPos.y}px`;
-        }
+function initAudio() {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    oscillator = audioCtx.createOscillator();
+    gainNode = audioCtx.createGain();
+    oscillator.type = 'triangle'; // Slightly fuller sound for walking
+    gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+    oscillator.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+    oscillator.start();
+}
 
-        function updatePosition(e) {
-            // Beta is tilt front-to-back (-180 to 180)
-            // Gamma is tilt left-to-right (-90 to 90)
-            let dx = e.gamma * 5; // Sensitivity multiplier
-            let dy = e.beta * 5;
+function handleLocation(position) {
+    const { latitude, longitude } = position.coords;
 
-            playerPos.x = Math.max(25, Math.min(window.innerWidth - 25, playerPos.x + dx));
-            playerPos.y = Math.max(25, Math.min(window.innerHeight - 25, playerPos.y + dy));
+    // Set the "center of the room" the first time we get a signal
+    if (!originCoords) {
+        originCoords = { lat: latitude, lng: longitude };
+        target.style.left = `${targetPos.x}px`;
+        target.style.top = `${targetPos.y}px`;
+        return;
+    }
 
-            player.style.left = `${playerPos.x}px`;
-            player.style.top = `${playerPos.y}px`;
+    // Calculate offset from origin
+    // Difference in Lat is Y, difference in Lng is X
+    const dy = (originCoords.lat - latitude) * SENSITIVITY;
+    const dx = (longitude - originCoords.lng) * SENSITIVITY;
 
-            updateAudio();
-        }
+    // Apply to screen center
+    playerPos.x = (window.innerWidth / 2) + dx;
+    playerPos.y = (window.innerHeight / 2) + dy;
 
-        function updateAudio() {
-            if (!oscillator) return;
+    // Update Visuals
+    player.style.left = `${playerPos.x}px`;
+    player.style.top = `${playerPos.y}px`;
 
-            // Calculate distance between player and target
-            const dist = Math.sqrt(
-                Math.pow(playerPos.x - targetPos.x, 2) + 
-                Math.pow(playerPos.y - targetPos.y, 2)
-            );
+    updateAudio();
+}
 
-            // Max distance is roughly the screen diagonal
-            const maxDist = Math.sqrt(Math.pow(window.innerWidth, 2) + Math.pow(window.innerHeight, 2));
-            
-            // Inverse relationship: closer = higher frequency
-            // Mapping distance to frequency range (220Hz to 880Hz)
-            const proximity = 1 - (dist / maxDist); 
-            const freq = 220 + (proximity * 660);
-            
-            oscillator.frequency.setTargetAtTime(freq, audioCtx.currentTime, 0.05);
+function updateAudio() {
+    if (!oscillator) return;
 
-            // Check for "collision"
-            if (dist < 40) {
-                moveTarget(); // Jump to new spot
-            }
-        }
+    const dist = Math.sqrt(
+        Math.pow(playerPos.x - targetPos.x, 2) + 
+        Math.pow(playerPos.y - targetPos.y, 2)
+    );
 
-        startBtn.addEventListener('click', () => {
-            // Request permission for iOS 13+
-            if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-                DeviceOrientationEvent.requestPermission()
-                    .then(response => {
-                        if (response === 'granted') {
-                            window.addEventListener('deviceorientation', updatePosition);
-                        }
-                    })
-                    .catch(console.error);
-            } else {
-                window.addEventListener('deviceorientation', updatePosition);
-            }
+    const maxDist = 500; // Define a "hearing range" in pixels
+    const proximity = Math.max(0, 1 - (dist / maxDist)); 
+    
+    // Frequency shifts from 200Hz to 1000Hz as you get closer
+    const freq = 200 + (proximity * 800);
+    oscillator.frequency.setTargetAtTime(freq, audioCtx.currentTime, 0.1);
 
-            initAudio();
-            moveTarget();
-            overlay.style.display = 'none';
+    // Collision detection
+    if (dist < 50) {
+        alert("Target Found!");
+        location.reload(); // Reset for a new game
+    }
+}
+
+startBtn.addEventListener('click', () => {
+    initAudio();
+    
+    if ("geolocation" in navigator) {
+        // enableHighAccuracy is CRITICAL for indoor/small movement
+        navigator.geolocation.watchPosition(handleLocation, (err) => {
+            alert("Please enable GPS/Location services.");
+        }, {
+            enableHighAccuracy: true,
+            maximumAge: 0,
+            timeout: 5000
         });
+    }
+
+    overlay.style.display = 'none';
+});
 
     </script>
 </body>
