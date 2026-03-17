@@ -11,8 +11,6 @@ let player = { x: width / 2, y: height / 2 };
 let target = { x: 0, y: 0 };
 let gameStarted = false;
 
-let lastVibrate = 0;
-
 // Movement variables (Accelerometers are noisy, so we use "friction" to stabilize)
 let posX = 0; 
 let posY = 0;
@@ -72,26 +70,6 @@ function handleMotion(event) {
     player.y = (height / 2) + (posY * 20);
 }
 
-function handleHaptics(distance) {
-    // Only vibrate if the player is within 100 pixels
-    if (distance < 100) {
-        let now = Date.now();
-        
-        // Create a "pulsing" effect: the closer you are, the faster it pulses
-        // Map distance (0-100) to an interval (100ms - 1000ms)
-        let interval = map(distance, 0, 100, 100, 1000);
-
-        if (now - lastVibrate > interval) {
-            // navigator.vibrate works on most modern browsers
-            // 50ms is a short "tap"
-            if (navigator.vibrate) {
-                navigator.vibrate(50);
-            }
-            lastVibrate = now;
-        }
-    }
-}
-
 // --- Interaction (The "Start" Button) ---
 document.getElementById('start_button').addEventListener('click', async () => {
     // 1. Request iOS Permissions
@@ -118,32 +96,37 @@ function draw() {
     if (!gameStarted) return;
     requestAnimationFrame(draw);
 
+    // Clear background
     ctx.fillStyle = 'black';
     ctx.fillRect(0, 0, width, height);
 
-    // ... (Your player and target drawing code) ...
+    // Draw Target (Optional: remove if you want it truly "blind")
+    ctx.beginPath();
+    ctx.arc(target.x, target.y, 20, 0, Math.PI * 2);
+    ctx.strokeStyle = 'lime';
+    ctx.stroke();
 
+    // Draw Player
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, 15, 0, Math.PI * 2);
+    ctx.fillStyle = 'white';
+    ctx.fill();
+
+    // Distance & Sound Logic
     let dx = player.x - target.x;
     let dy = player.y - target.y;
     let distance = Math.sqrt(dx * dx + dy * dy);
-    
-    // 1. Update Sound
     let maxDist = Math.sqrt(width**2 + height**2);
+
+    // Higher pitch as distance gets smaller
     let freq = map(distance, 0, maxDist, 1200, 150);
     oscillator.frequency.setTargetAtTime(freq, audioCtx.currentTime, 0.05);
 
-    // 2. Trigger Haptics
-    handleHaptics(distance);
-
-    // 3. Win Condition
+    // Check for Win
     if (distance < 25) {
-        ctx.fillStyle = "lime";
-        ctx.font = "bold 40px Arial";
-        ctx.textAlign = "center";
-        ctx.fillText("TARGET FOUND!", width/2, height/2);
-        
-        // Long vibration for winning
-        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+        ctx.fillStyle = "white";
+        ctx.font = "30px Arial";
+        ctx.fillText("TARGET FOUND!", width/2 - 100, height/2);
     }
 }
 
