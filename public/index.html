@@ -102,7 +102,7 @@
         function update() {
             // 1. Handle Endless Mode (Perlin-ish random drift)
             if (endlessToggle.checked) {
-                noiseOffset += 0.02;
+                noiseOffset += 0.001;
                 targetPos.x += Math.sin(noiseOffset) * 2;
                 targetPos.y += Math.cos(noiseOffset * 0.8) * 2;
                 
