@@ -76,8 +76,32 @@
     const SENSITIVITY = 500000; 
     const SMOOTHING = 0.08;      
 
+    const PLAYER_SIZE = 30; // Half-width of the player cube
+    const SUCCESS_DIST = 45; // Distance to trigger target hit
+
     let audioCtx, filter, mainGain;
     let oscillators = [];
+
+    // --- AUDIO: SUCCESS PING ---
+    function playSuccessPing() {
+        if (!audioCtx) return;
+        const pingOsc = audioCtx.createOscillator();
+        const pingGain = audioCtx.createGain();
+
+        pingOsc.type = 'sine';
+        // High-pitched "Angelic" Success Note (C6)
+        pingOsc.frequency.setValueAtTime(1046.50, audioCtx.currentTime); 
+        
+        pingGain.gain.setValueAtTime(0, audioCtx.currentTime);
+        pingGain.gain.linearRampToValueAtTime(0.2, audioCtx.currentTime + 0.02);
+        pingGain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.8);
+
+        pingOsc.connect(pingGain);
+        pingGain.connect(audioCtx.destination);
+
+        pingOsc.start();
+        pingOsc.stop(audioCtx.currentTime + 0.8);
+    }
 
     function initAngelicAudio() {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -124,45 +148,53 @@
     }
 
     function update() {
+        // 1. Endless Target Movement (with screen clamping)
         if (endlessToggle.checked) {
             noiseOffset += 0.005;
             let nextX = targetPos.x + Math.sin(noiseOffset) * 0.8;
             let nextY = targetPos.y + Math.cos(noiseOffset * 0.7) * 0.8;
-            const pad = 30;
+            const pad = 40;
+            // Keep target on screen
             if (nextX > pad && nextX < window.innerWidth - pad) targetPos.x = nextX;
             if (nextY > pad && nextY < window.innerHeight - pad) targetPos.y = nextY;
+            
             target.style.left = `${targetPos.x}px`;
             target.style.top = `${targetPos.y}px`;
         }
 
-        // Combine GPS position with Tilt Offset for testing
+        // 2. Player Movement Calculation
         let combinedTargetX = rawGPSPos.x + tiltOffset.x;
         let combinedTargetY = rawGPSPos.y + tiltOffset.y;
 
-        // Smooth movement toward the combined position
-        playerPos.x += (combinedTargetX - playerPos.x) * SMOOTHING;
-        playerPos.y += (combinedTargetY - playerPos.y) * SMOOTHING;
+        // 3. SMOOTHING + SCREEN CLAMPING (Player stays on screen)
+        let desiredX = playerPos.x + (combinedTargetX - playerPos.x) * SMOOTHING;
+        let desiredY = playerPos.y + (combinedTargetY - playerPos.y) * SMOOTHING;
+
+        // Strict boundary enforcement: Screen width/height minus half player size
+        playerPos.x = Math.max(PLAYER_SIZE, Math.min(window.innerWidth - PLAYER_SIZE, desiredX));
+        playerPos.y = Math.max(PLAYER_SIZE, Math.min(window.innerHeight - PLAYER_SIZE, desiredY));
 
         player.style.left = `${playerPos.x}px`;
         player.style.top = `${playerPos.y}px`;
-    
+        
+        // 4. Audio & Collision
         if (oscillators.length > 0) {
             const dist = Math.sqrt(Math.pow(playerPos.x - targetPos.x, 2) + Math.pow(playerPos.y - targetPos.y, 2));
             const proximity = Math.max(0, 1 - (dist / 600)); 
 
-            // PITCH 2X: Sliding from 220Hz up to 440Hz
+            // Pitch and volume scaling (10x Gain, 2x Pitch)
             const baseFreq = 220 + (proximity * 220);
             oscillators[0].frequency.setTargetAtTime(baseFreq, audioCtx.currentTime, 0.2);
             oscillators[1].frequency.setTargetAtTime(baseFreq * 1.5, audioCtx.currentTime, 0.2);
             oscillators[2].frequency.setTargetAtTime(baseFreq * 2.0, audioCtx.currentTime, 0.2);
 
             filter.frequency.setTargetAtTime(400 + (proximity * 3000), audioCtx.currentTime, 0.2);
-            
-            // GAIN 10X: Swelling up to 0.9 volume
             mainGain.gain.setTargetAtTime(0.3 + (proximity * 0.6), audioCtx.currentTime, 0.2);
 
-            if (dist < 40) {
-                moveTarget();
+            // Success Check
+            if (dist < SUCCESS_DIST) {
+                playSuccessPing(); // The positive "Hit" sound
+                moveTarget();      // Relocate target
             }
         }
         requestAnimationFrame(update);
