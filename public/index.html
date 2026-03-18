@@ -3,38 +3,37 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Ambient Walking Tracker</title>
+    <title>Audio Compass</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #0a0a0c; font-family: 'Segoe UI', sans-serif; touch-action: none; color: white; }
+        body { margin: 0; overflow: hidden; background: #050505; font-family: 'Helvetica Neue', sans-serif; touch-action: none; color: #444; }
         #game-container { width: 100vw; height: 100vh; position: relative; }
         
-        .cube { position: absolute; width: 40px; height: 40px; border-radius: 12px; transform: translate(-50%, -50%); transition: background 0.5s; }
-        #player { background: #4db8ff; box-shadow: 0 0 30px #4db8ff; z-index: 2; }
-        #target { background: #ff9d00; box-shadow: 0 0 30px #ff9d0088; z-index: 1; border: 2px solid #fff; }
+        /* Player is visible, Target is HIDDEN */
+        .cube { position: absolute; width: 30px; height: 30px; border-radius: 50%; transform: translate(-50%, -50%); }
+        #player { background: #ffffff; box-shadow: 0 0 15px rgba(255,255,255,0.3); z-index: 2; }
+        #target { background: transparent; pointer-events: none; } /* Invisible target */
 
-        /* UI Elements */
-        #ui-layer { position: fixed; top: 20px; left: 20px; z-index: 20; pointer-events: none; }
-        .controls { position: fixed; bottom: 30px; right: 20px; z-index: 20; background: rgba(255,255,255,0.1); padding: 15px; border-radius: 15px; backdrop-filter: blur(5px); }
-        label { font-size: 0.9rem; font-weight: bold; margin-right: 10px; pointer-events: auto; }
+        #ui-layer { position: fixed; top: 20px; left: 20px; z-index: 20; font-size: 0.8rem; letter-spacing: 1px; }
+        .controls { position: fixed; bottom: 30px; right: 20px; z-index: 20; background: rgba(255,255,255,0.05); padding: 10px 15px; border-radius: 10px; }
         
-        #overlay { position: fixed; inset: 0; background: #000; display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 100; }
-        button { padding: 15px 30px; font-size: 1rem; background: #4db8ff; border: none; border-radius: 8px; color: #000; font-weight: bold; }
+        #overlay { position: fixed; inset: 0; background: #000; display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 100; color: white; }
+        button { padding: 15px 30px; background: none; border: 1px solid white; color: white; border-radius: 4px; cursor: pointer; }
     </style>
 </head>
 <body>
 
     <div id="overlay">
-        <h2>Ambient Walker</h2>
-        <p style="text-align: center; opacity: 0.7; padding: 0 20px;">Walk around your room to find the orange cube.</p>
-        <button id="start-btn">Begin Journey</button>
+        <h2>Blind Navigation</h2>
+        <p style="opacity: 0.6; margin-bottom: 20px;">Listen for the hum. Find the invisible point.</p>
+        <button id="start-btn">Start</button>
     </div>
 
     <div id="ui-layer">
-        <div id="status">Waiting for GPS...</div>
+        <div id="status">Syncing GPS...</div>
     </div>
 
     <div class="controls">
-        <label for="endless-toggle">Endless Movement</label>
+        <label style="color: #666; font-size: 12px;">Endless Drift</label>
         <input type="checkbox" id="endless-toggle">
     </div>
 
@@ -54,34 +53,32 @@
         let playerPos = { x: window.innerWidth/2, y: window.innerHeight/2 };
         let targetPos = { x: 0, y: 0 };
         let originCoords = null;
+        let lastDist = 999999;
         let noiseOffset = 0;
         
-        const SENSITIVITY = 1500000; 
+        const SENSITIVITY = 180000; 
 
-        // --- CALM AUDIO ENGINE ---
-        let audioCtx, osc1, osc2, lfo, filter, mainGain;
+        // --- AUDIO ENGINE ---
+        let audioCtx, osc1, osc2, filter, mainGain;
 
-        function initCalmAudio() {
+        function initAudio() {
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             
-            // Two oscillators for a "thick" chord sound (detuned slightly)
+            // Background Hum (Very Quiet)
             osc1 = audioCtx.createOscillator();
             osc2 = audioCtx.createOscillator();
             filter = audioCtx.createBiquadFilter();
             mainGain = audioCtx.createGain();
 
             osc1.type = 'triangle'; 
-            osc2.type = 'sawtooth'; // Sawtooth is harsh, but we will filter it!
-            
-            // Low frequencies for a "hum"
-            osc1.frequency.value = 110; // A2
-            osc2.frequency.value = 112; // Slight detune for "chorus" effect
+            osc2.type = 'sine';
+            osc1.frequency.value = 98; // G2 (Deep Hum)
+            osc2.frequency.value = 99; 
 
             filter.type = 'lowpass';
-            filter.frequency.value = 400; // Muffle the harshness
-            filter.Q.value = 5;
-
-            mainGain.gain.value = 0.2;
+            filter.frequency.value = 200; 
+            
+            mainGain.gain.value = 0.03; // Extremely subtle volume
 
             osc1.connect(filter);
             osc2.connect(filter);
@@ -92,55 +89,63 @@
             osc2.start();
         }
 
-        function moveTargetRandomly() {
-            targetPos.x = Math.random() * (window.innerWidth - 60) + 30;
-            targetPos.y = Math.random() * (window.innerHeight - 60) + 30;
-            target.style.left = `${targetPos.x}px`;
-            target.style.top = `${targetPos.y}px`;
+        // The "Ping" - Short, soft high note
+        function playPing() {
+            if (!audioCtx) return;
+            const pingOsc = audioCtx.createOscillator();
+            const pingGain = audioCtx.createGain();
+
+            pingOsc.type = 'sine';
+            pingOsc.frequency.setValueAtTime(880, audioCtx.currentTime); // High A
+            
+            pingGain.gain.setValueAtTime(0, audioCtx.currentTime);
+            pingGain.gain.linearRampToValueAtTime(0.05, audioCtx.currentTime + 0.05);
+            pingGain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
+
+            pingOsc.connect(pingGain);
+            pingGain.connect(audioCtx.destination);
+
+            pingOsc.start();
+            pingOsc.stop(audioCtx.currentTime + 0.5);
+        }
+
+        function moveTarget() {
+            targetPos.x = Math.random() * (window.innerWidth - 100) + 50;
+            targetPos.y = Math.random() * (window.innerHeight - 100) + 50;
         }
 
         function update() {
-            // 1. Handle Endless Mode (Perlin-ish random drift)
+            // Endless Drift Logic
             if (endlessToggle.checked) {
-                noiseOffset += 0.001;
-                targetPos.x += Math.sin(noiseOffset) * 2;
-                targetPos.y += Math.cos(noiseOffset * 0.8) * 2;
-                
-                // Keep target in bounds
-                targetPos.x = Math.max(30, Math.min(window.innerWidth - 30, targetPos.x));
-                targetPos.y = Math.max(30, Math.min(window.innerHeight - 30, targetPos.y));
-                
-                target.style.left = `${targetPos.x}px`;
-                target.style.top = `${targetPos.y}px`;
+                noiseOffset += 0.005; // Slower, more subtle drift
+                targetPos.x += Math.sin(noiseOffset) * 0.5;
+                targetPos.y += Math.cos(noiseOffset * 0.7) * 0.5;
             }
 
-            // 2. Audio Mapping
+            // Audio Tracking Logic
             if (osc1) {
                 const dist = Math.sqrt(Math.pow(playerPos.x - targetPos.x, 2) + Math.pow(playerPos.y - targetPos.y, 2));
-                const proximity = Math.max(0, 1 - (dist / 600)); 
+                const proximity = Math.max(0, 1 - (dist / 800)); 
 
-                // Frequency gets slightly higher as you approach
-                const baseFreq = 110 + (proximity * 110); 
-                osc1.frequency.setTargetAtTime(baseFreq, audioCtx.currentTime, 0.1);
-                osc2.frequency.setTargetAtTime(baseFreq * 1.01, audioCtx.currentTime, 0.1);
+                // Hum gets slightly richer as you approach
+                filter.frequency.setTargetAtTime(150 + (proximity * 600), audioCtx.currentTime, 0.2);
+                mainGain.gain.setTargetAtTime(0.02 + (proximity * 0.04), audioCtx.currentTime, 0.2);
 
-                // Open the filter (more "clarity") as you get closer
-                filter.frequency.setTargetAtTime(300 + (proximity * 1500), audioCtx.currentTime, 0.1);
+                // Collision detection
+                if (dist < 40) {
+                    playPing(); playPing(); // Double ping for success
+                    moveTarget();
+                }
             }
-
-            // 3. Collision Logic
-            const distToTarget = Math.sqrt(Math.pow(playerPos.x - targetPos.x, 2) + Math.pow(playerPos.y - targetPos.y, 2));
-            if (distToTarget < 45) {
-                status.innerText = "Found! Relocating...";
-                moveTargetRandomly();
-            }
-
             requestAnimationFrame(update);
         }
 
         function handleLocation(position) {
             const { latitude, longitude, accuracy } = position.coords;
-            status.innerText = `GPS Accuracy: ${Math.round(accuracy)}m`;
+            
+            // Connection Status Update
+            status.innerText = accuracy < 15 ? "CONNECTION: GOOD" : "CONNECTION: POOR";
+            status.style.color = accuracy < 15 ? "#00ff88" : "#ff4444";
 
             if (!originCoords) {
                 originCoords = { lat: latitude, lng: longitude };
@@ -155,12 +160,18 @@
 
             player.style.left = `${playerPos.x}px`;
             player.style.top = `${playerPos.y}px`;
+
+            // Ping Logic: If distance decreased, play a light ping
+            const currentDist = Math.sqrt(Math.pow(playerPos.x - targetPos.x, 2) + Math.pow(playerPos.y - targetPos.y, 2));
+            if (currentDist < lastDist - 2) { // 2px threshold to avoid GPS jitter pings
+                playPing();
+            }
+            lastDist = currentDist;
         }
 
         startBtn.addEventListener('click', () => {
-            initCalmAudio();
-            moveTargetRandomly();
-            
+            initAudio();
+            moveTarget();
             if ("geolocation" in navigator) {
                 navigator.geolocation.watchPosition(handleLocation, null, {
                     enableHighAccuracy: true,
