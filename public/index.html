@@ -140,7 +140,7 @@
 
         function update() {
             if (endlessToggle.checked) {
-                noiseOffset += 0.005;
+                noiseOffset += 0.0001;
                 let nextX = targetPos.x + Math.sin(noiseOffset) * 0.8;
                 let nextY = targetPos.y + Math.cos(noiseOffset * 0.7) * 0.8;
                 const pad = 30;
