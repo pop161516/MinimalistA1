@@ -79,40 +79,40 @@
         let oscillators = []; // We'll use an array for multiple "angelic" layers
 
         function initAngelicAudio() {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    
-    filter = audioCtx.createBiquadFilter();
-    mainGain = audioCtx.createGain();
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            
+            filter = audioCtx.createBiquadFilter();
+            mainGain = audioCtx.createGain();
 
-    // ANGELIC FORMULA: Layered Sine waves at harmonics
-    // Base (1.0), Octave (2.0), and a Fifth (1.5)
-    const harmonics = [1.0, 1.5, 2.0]; 
-    
-    harmonics.forEach((ratio, index) => {
-        let osc = audioCtx.createOscillator();
-        let oscGain = audioCtx.createGain();
-        
-        osc.type = 'sine';
-        osc.frequency.value = 110 * ratio; // Starting at A2
-        
-        // Lower harmonics are louder, higher are quieter/shimmering
-        oscGain.gain.value = 0.1 / (index + 1); 
-        
-        osc.connect(oscGain);
-        oscGain.connect(filter);
-        oscillators.push(osc);
-        osc.start();
-    });
+            // ANGELIC FORMULA: Layered Sine waves at harmonics
+            // Base (1.0), Octave (2.0), and a Fifth (1.5)
+            const harmonics = [1.0, 1.5, 2.0]; 
+            
+            harmonics.forEach((ratio, index) => {
+                let osc = audioCtx.createOscillator();
+                let oscGain = audioCtx.createGain();
+                
+                osc.type = 'sine';
+                osc.frequency.value = 110 * ratio; // Starting at A2
+                
+                // Lower harmonics are louder, higher are quieter/shimmering
+                oscGain.gain.value = 0.1 / (index + 1); 
+                
+                osc.connect(oscGain);
+                oscGain.connect(filter);
+                oscillators.push(osc);
+                osc.start();
+            });
 
-    filter.type = 'lowpass';
-    filter.frequency.value = 400; 
-    filter.Q.value = 2;
+            filter.type = 'lowpass';
+            filter.frequency.value = 400; 
+            filter.Q.value = 2;
 
-    mainGain.gain.value = 0.04; // Very quiet background
+            mainGain.gain.value = 0.04; // Very quiet background
 
-    filter.connect(mainGain);
-    mainGain.connect(audioCtx.destination);
-}
+            filter.connect(mainGain);
+            mainGain.connect(audioCtx.destination);
+        }
 
         // function playPing() {
         //     if (!audioCtx) return;
@@ -130,84 +130,83 @@
         // }
 
         function moveTarget() {
-    // Keeps target at least 50px away from edges so it never goes off-screen
-    const padding = 50;
-    targetPos.x = Math.random() * (window.innerWidth - (padding * 2)) + padding;
-    targetPos.y = Math.random() * (window.innerHeight - (padding * 2)) + padding;
-    target.style.left = `${targetPos.x}px`;
-    target.style.top = `${targetPos.y}px`;
-}
-
-function update() {
-    if (endlessToggle.checked) {
-        noiseOffset += 0.005;
-        let nextX = targetPos.x + Math.sin(noiseOffset) * 0.8;
-        let nextY = targetPos.y + Math.cos(noiseOffset * 0.7) * 0.8;
-        const pad = 30;
-        if (nextX > pad && nextX < window.innerWidth - pad) targetPos.x = nextX;
-        if (nextY > pad && nextY < window.innerHeight - pad) targetPos.y = nextY;
-        target.style.left = `${targetPos.x}px`;
-        target.style.top = `${targetPos.y}px`;
-    }
-
-    // SMOOTHING
-    playerPos.x += (rawGPSPos.x - playerPos.x) * SMOOTHING;
-    playerPos.y += (rawGPSPos.y - playerPos.y) * SMOOTHING;
-    player.style.left = `${playerPos.x}px`;
-    player.style.top = `${playerPos.y}px`;
-
-    // AUDIO MAPPING
-    if (oscillators.length > 0) {
-        const dist = Math.sqrt(Math.pow(playerPos.x - targetPos.x, 2) + Math.pow(playerPos.y - targetPos.y, 2));
-        const proximity = Math.max(0, 1 - (dist / 600)); 
-
-        // 1. PITCH: Base frequency slides up an entire octave as you get closer
-        // From 110Hz (A2) to 220Hz (A3)
-        const baseFreq = 110 + (proximity * 110);
-        oscillators[0].frequency.setTargetAtTime(baseFreq, audioCtx.currentTime, 0.2);
-        oscillators[1].frequency.setTargetAtTime(baseFreq * 1.5, audioCtx.currentTime, 0.2);
-        oscillators[2].frequency.setTargetAtTime(baseFreq * 2.0, audioCtx.currentTime, 0.2);
-
-        // 2. TIMBRE: Filter opens up to let the "shimmer" through
-        filter.frequency.setTargetAtTime(300 + (proximity * 2000), audioCtx.currentTime, 0.2);
-        
-        // 3. VOLUME: Very slight swell
-        mainGain.gain.setTargetAtTime(0.03 + (proximity * 0.06), audioCtx.currentTime, 0.2);
-
-        if (dist < 40) {
-            // No pings! Just a smooth relocation.
-            moveTarget();
+            // Keeps target at least 50px away from edges so it never goes off-screen
+            const padding = 50;
+            targetPos.x = Math.random() * (window.innerWidth - (padding * 2)) + padding;
+            targetPos.y = Math.random() * (window.innerHeight - (padding * 2)) + padding;
+            target.style.left = `${targetPos.x}px`;
+            target.style.top = `${targetPos.y}px`;
         }
-    }
-    requestAnimationFrame(update);
-}
+
+        function update() {
+            if (endlessToggle.checked) {
+                noiseOffset += 0.005;
+                let nextX = targetPos.x + Math.sin(noiseOffset) * 0.8;
+                let nextY = targetPos.y + Math.cos(noiseOffset * 0.7) * 0.8;
+                const pad = 30;
+                if (nextX > pad && nextX < window.innerWidth - pad) targetPos.x = nextX;
+                if (nextY > pad && nextY < window.innerHeight - pad) targetPos.y = nextY;
+                target.style.left = `${targetPos.x}px`;
+                target.style.top = `${targetPos.y}px`;
+            }
+
+            playerPos.x += (rawGPSPos.x - playerPos.x) * SMOOTHING;
+            playerPos.y += (rawGPSPos.y - playerPos.y) * SMOOTHING;
+            player.style.left = `${playerPos.x}px`;
+            player.style.top = `${playerPos.y}px`;
+        
+            // AUDIO MAPPING
+            if (oscillators.length > 0) {
+                const dist = Math.sqrt(Math.pow(playerPos.x - targetPos.x, 2) + Math.pow(playerPos.y - targetPos.y, 2));
+                const proximity = Math.max(0, 1 - (dist / 600)); 
+
+                // 1. PITCH: Base frequency slides up an entire octave as you get closer
+                // From 110Hz (A2) to 220Hz (A3)
+                const baseFreq = 110 + (proximity * 110);
+                oscillators[0].frequency.setTargetAtTime(baseFreq, audioCtx.currentTime, 0.2);
+                oscillators[1].frequency.setTargetAtTime(baseFreq * 1.5, audioCtx.currentTime, 0.2);
+                oscillators[2].frequency.setTargetAtTime(baseFreq * 2.0, audioCtx.currentTime, 0.2);
+
+                // 2. TIMBRE: Filter opens up to let the "shimmer" through
+                filter.frequency.setTargetAtTime(300 + (proximity * 2000), audioCtx.currentTime, 0.2);
+                
+                // 3. VOLUME: Very slight swell
+                mainGain.gain.setTargetAtTime(0.03 + (proximity * 0.06), audioCtx.currentTime, 0.2);
+
+                if (dist < 40) {
+                    // No pings! Just a smooth relocation.
+                    moveTarget();
+                }
+            }
+            requestAnimationFrame(update);
+        }
 
         function handleLocation(position) {
-    const { latitude, longitude, accuracy } = position.coords;
-    
-    status.innerText = accuracy < 15 ? "CONNECTION: GOOD" : "CONNECTION: POOR";
-    status.style.color = accuracy < 15 ? "#00ff88" : "#ff4444";
+            const { latitude, longitude, accuracy } = position.coords;
+        
+            status.innerText = accuracy < 15 ? "CONNECTION: GOOD" : "CONNECTION: POOR";
+            status.style.color = accuracy < 15 ? "#00ff88" : "#ff4444";
 
-    if (!originCoords) {
-        originCoords = { lat: latitude, lng: longitude };
-        return;
-    }
+            if (!originCoords) {
+                originCoords = { lat: latitude, lng: longitude };
+                return;
+            }
 
-    // Calculate Raw Position
-    const dy = (originCoords.lat - latitude) * SENSITIVITY;
-    const dx = (longitude - originCoords.lng) * SENSITIVITY;
+            // Calculate Raw Position
+            const dy = (originCoords.lat - latitude) * SENSITIVITY;
+            const dx = (longitude - originCoords.lng) * SENSITIVITY;
 
-    // We store the "Jumpy" GPS data here
-    rawGPSPos.x = (window.innerWidth / 2) + dx;
-    rawGPSPos.y = (window.innerHeight / 2) + dy;
+            // We store the "Jumpy" GPS data here
+            rawGPSPos.x = (window.innerWidth / 2) + dx;
+            rawGPSPos.y = (window.innerHeight / 2) + dy;
 
-    // Ping Logic
-    const currentDist = Math.sqrt(Math.pow(playerPos.x - targetPos.x, 2) + Math.pow(playerPos.y - targetPos.y, 2));
-    if (currentDist < lastDist - 1.5) { 
-        playPing();
-    }
-    lastDist = currentDist;
-}
+            // Ping Logic
+            // const currentDist = Math.sqrt(Math.pow(playerPos.x - targetPos.x, 2) + Math.pow(playerPos.y - targetPos.y, 2));
+            // if (currentDist < lastDist - 1.5) { 
+            //     playPing();
+            // }
+            // lastDist = currentDist;
+        }
 
         startBtn.addEventListener('click', () => {
             initAudio();
