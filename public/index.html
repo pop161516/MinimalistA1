@@ -3,29 +3,45 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Audio Compass</title>
+    <title>Audio Compass - Test Mode</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #050505; font-family: 'Helvetica Neue', sans-serif; touch-action: none; color: #444; }
+        body { margin: 0; overflow: hidden; background: #050505; font-family: 'Helvetica Neue', sans-serif; touch-action: none; color: #666; }
         #game-container { width: 100vw; height: 100vh; position: relative; }
         
-        /* Player is visible, Target is HIDDEN */
         .cube { position: absolute; width: 30px; height: 30px; border-radius: 50%; transform: translate(-50%, -50%); }
-        #player { background: #ffffff; box-shadow: 0 0 15px rgba(255,255,255,0.3); z-index: 2; }
-        #target { background: transparent; pointer-events: none; } /* Invisible target */
-
-        #ui-layer { position: fixed; top: 20px; left: 20px; z-index: 20; font-size: 0.8rem; letter-spacing: 1px; }
-        .controls { position: fixed; bottom: 30px; right: 20px; z-index: 20; background: rgba(255,255,255,0.05); padding: 10px 15px; border-radius: 10px; }
         
+        #player { 
+            background: #ffffff; 
+            box-shadow: 0 0 15px rgba(255,255,255,0.4); 
+            z-index: 10; 
+        }
+
+        #target { 
+            background: rgba(255, 157, 0, 0.6); /* Visible for testing */
+            border: 2px solid #ff9d00;
+            box-shadow: 0 0 20px #ff9d00;
+            z-index: 5;
+            animation: pulse 1.5s infinite ease-in-out;
+        }
+
+        @keyframes pulse {
+            0% { transform: translate(-50%, -50%) scale(0.8); opacity: 0.5; }
+            50% { transform: translate(-50%, -50%) scale(1.2); opacity: 1; }
+            100% { transform: translate(-50%, -50%) scale(0.8); opacity: 0.5; }
+        }
+
+        #ui-layer { position: fixed; top: 20px; left: 20px; z-index: 20; font-size: 0.7rem; letter-spacing: 1px; }
+        .controls { position: fixed; bottom: 30px; right: 20px; z-index: 20; background: rgba(255,255,255,0.05); padding: 10px 15px; border-radius: 10px; }
         #overlay { position: fixed; inset: 0; background: #000; display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 100; color: white; }
-        button { padding: 15px 30px; background: none; border: 1px solid white; color: white; border-radius: 4px; cursor: pointer; }
+        button { padding: 15px 30px; background: none; border: 1px solid white; color: white; border-radius: 4px; }
     </style>
 </head>
 <body>
 
     <div id="overlay">
-        <h2>Blind Navigation</h2>
-        <p style="opacity: 0.6; margin-bottom: 20px;">Listen for the hum. Find the invisible point.</p>
-        <button id="start-btn">Start</button>
+        <h2>Developer Test Mode</h2>
+        <p style="opacity: 0.6; margin-bottom: 20px;">Target is visible for calibration.</p>
+        <button id="start-btn">Start Test</button>
     </div>
 
     <div id="ui-layer">
@@ -33,7 +49,7 @@
     </div>
 
     <div class="controls">
-        <label style="color: #666; font-size: 12px;">Endless Drift</label>
+        <label style="color: #888; font-size: 11px;">Endless Mode</label>
         <input type="checkbox" id="endless-toggle">
     </div>
 
@@ -55,16 +71,12 @@
         let originCoords = null;
         let lastDist = 999999;
         let noiseOffset = 0;
-        
         const SENSITIVITY = 180000; 
 
-        // --- AUDIO ENGINE ---
         let audioCtx, osc1, osc2, filter, mainGain;
 
         function initAudio() {
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            
-            // Background Hum (Very Quiet)
             osc1 = audioCtx.createOscillator();
             osc2 = audioCtx.createOscillator();
             filter = audioCtx.createBiquadFilter();
@@ -72,13 +84,12 @@
 
             osc1.type = 'triangle'; 
             osc2.type = 'sine';
-            osc1.frequency.value = 98; // G2 (Deep Hum)
+            osc1.frequency.value = 98; 
             osc2.frequency.value = 99; 
 
             filter.type = 'lowpass';
             filter.frequency.value = 200; 
-            
-            mainGain.gain.value = 0.03; // Extremely subtle volume
+            mainGain.gain.value = 0.03; 
 
             osc1.connect(filter);
             osc2.connect(filter);
@@ -89,51 +100,45 @@
             osc2.start();
         }
 
-        // The "Ping" - Short, soft high note
         function playPing() {
             if (!audioCtx) return;
             const pingOsc = audioCtx.createOscillator();
             const pingGain = audioCtx.createGain();
-
             pingOsc.type = 'sine';
-            pingOsc.frequency.setValueAtTime(880, audioCtx.currentTime); // High A
-            
+            pingOsc.frequency.setValueAtTime(880, audioCtx.currentTime); 
             pingGain.gain.setValueAtTime(0, audioCtx.currentTime);
-            pingGain.gain.linearRampToValueAtTime(0.05, audioCtx.currentTime + 0.05);
-            pingGain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
-
+            pingGain.gain.linearRampToValueAtTime(0.04, audioCtx.currentTime + 0.05);
+            pingGain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
             pingOsc.connect(pingGain);
             pingGain.connect(audioCtx.destination);
-
             pingOsc.start();
-            pingOsc.stop(audioCtx.currentTime + 0.5);
+            pingOsc.stop(audioCtx.currentTime + 0.4);
         }
 
         function moveTarget() {
             targetPos.x = Math.random() * (window.innerWidth - 100) + 50;
             targetPos.y = Math.random() * (window.innerHeight - 100) + 50;
+            target.style.left = `${targetPos.x}px`;
+            target.style.top = `${targetPos.y}px`;
         }
 
         function update() {
-            // Endless Drift Logic
             if (endlessToggle.checked) {
-                noiseOffset += 0.005; // Slower, more subtle drift
+                noiseOffset += 0.005;
                 targetPos.x += Math.sin(noiseOffset) * 0.5;
                 targetPos.y += Math.cos(noiseOffset * 0.7) * 0.5;
+                target.style.left = `${targetPos.x}px`;
+                target.style.top = `${targetPos.y}px`;
             }
 
-            // Audio Tracking Logic
             if (osc1) {
                 const dist = Math.sqrt(Math.pow(playerPos.x - targetPos.x, 2) + Math.pow(playerPos.y - targetPos.y, 2));
                 const proximity = Math.max(0, 1 - (dist / 800)); 
-
-                // Hum gets slightly richer as you approach
                 filter.frequency.setTargetAtTime(150 + (proximity * 600), audioCtx.currentTime, 0.2);
                 mainGain.gain.setTargetAtTime(0.02 + (proximity * 0.04), audioCtx.currentTime, 0.2);
 
-                // Collision detection
                 if (dist < 40) {
-                    playPing(); playPing(); // Double ping for success
+                    playPing(); 
                     moveTarget();
                 }
             }
@@ -142,8 +147,6 @@
 
         function handleLocation(position) {
             const { latitude, longitude, accuracy } = position.coords;
-            
-            // Connection Status Update
             status.innerText = accuracy < 15 ? "CONNECTION: GOOD" : "CONNECTION: POOR";
             status.style.color = accuracy < 15 ? "#00ff88" : "#ff4444";
 
@@ -154,16 +157,13 @@
 
             const dy = (originCoords.lat - latitude) * SENSITIVITY;
             const dx = (longitude - originCoords.lng) * SENSITIVITY;
-
             playerPos.x = (window.innerWidth / 2) + dx;
             playerPos.y = (window.innerHeight / 2) + dy;
-
             player.style.left = `${playerPos.x}px`;
             player.style.top = `${playerPos.y}px`;
 
-            // Ping Logic: If distance decreased, play a light ping
             const currentDist = Math.sqrt(Math.pow(playerPos.x - targetPos.x, 2) + Math.pow(playerPos.y - targetPos.y, 2));
-            if (currentDist < lastDist - 2) { // 2px threshold to avoid GPS jitter pings
+            if (currentDist < lastDist - 1.5) { 
                 playPing();
             }
             lastDist = currentDist;
