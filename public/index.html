@@ -71,7 +71,9 @@
         let originCoords = null;
         let lastDist = 999999;
         let noiseOffset = 0;
-        const SENSITIVITY = 180000; 
+        const SENSITIVITY = 250000; // High sensitivity for small rooms
+        const SMOOTHING = 0.08;      // Lower = smoother but "laggier", Higher = snappier
+        let rawGPSPos = { x: window.innerWidth/2, y: window.innerHeight/2 };
 
         let audioCtx, osc1, osc2, filter, mainGain;
 
@@ -116,58 +118,80 @@
         }
 
         function moveTarget() {
-            targetPos.x = Math.random() * (window.innerWidth - 100) + 50;
-            targetPos.y = Math.random() * (window.innerHeight - 100) + 50;
-            target.style.left = `${targetPos.x}px`;
-            target.style.top = `${targetPos.y}px`;
-        }
+    // Keeps target at least 50px away from edges so it never goes off-screen
+    const padding = 50;
+    targetPos.x = Math.random() * (window.innerWidth - (padding * 2)) + padding;
+    targetPos.y = Math.random() * (window.innerHeight - (padding * 2)) + padding;
+    target.style.left = `${targetPos.x}px`;
+    target.style.top = `${targetPos.y}px`;
+}
 
         function update() {
-            if (endlessToggle.checked) {
-                noiseOffset += 0.005;
-                targetPos.x += Math.sin(noiseOffset) * 0.5;
-                targetPos.y += Math.cos(noiseOffset * 0.7) * 0.5;
-                target.style.left = `${targetPos.x}px`;
-                target.style.top = `${targetPos.y}px`;
-            }
+    // 1. Endless Mode Bounds Check
+    if (endlessToggle.checked) {
+        noiseOffset += 0.005;
+        let nextX = targetPos.x + Math.sin(noiseOffset) * 0.8;
+        let nextY = targetPos.y + Math.cos(noiseOffset * 0.7) * 0.8;
 
-            if (osc1) {
-                const dist = Math.sqrt(Math.pow(playerPos.x - targetPos.x, 2) + Math.pow(playerPos.y - targetPos.y, 2));
-                const proximity = Math.max(0, 1 - (dist / 800)); 
-                filter.frequency.setTargetAtTime(150 + (proximity * 600), audioCtx.currentTime, 0.2);
-                mainGain.gain.setTargetAtTime(0.02 + (proximity * 0.04), audioCtx.currentTime, 0.2);
+        // Strict Screen Boundary Enforcement
+        const pad = 30;
+        if (nextX > pad && nextX < window.innerWidth - pad) targetPos.x = nextX;
+        if (nextY > pad && nextY < window.innerHeight - pad) targetPos.y = nextY;
 
-                if (dist < 40) {
-                    playPing(); 
-                    moveTarget();
-                }
-            }
-            requestAnimationFrame(update);
+        target.style.left = `${targetPos.x}px`;
+        target.style.top = `${targetPos.y}px`;
+    }
+
+    // 2. SMOOTHING ENGINE (The "Secret Sauce")
+    // Instead of teleporting the player to the jumpy GPS spot, 
+    // we move them a small percentage of the way there every frame.
+    playerPos.x += (rawGPSPos.x - playerPos.x) * SMOOTHING;
+    playerPos.y += (rawGPSPos.y - playerPos.y) * SMOOTHING;
+
+    player.style.left = `${playerPos.x}px`;
+    player.style.top = `${playerPos.y}px`;
+
+    // 3. Audio & Collision (Same as before)
+    if (osc1) {
+        const dist = Math.sqrt(Math.pow(playerPos.x - targetPos.x, 2) + Math.pow(playerPos.y - targetPos.y, 2));
+        const proximity = Math.max(0, 1 - (dist / 600)); 
+        filter.frequency.setTargetAtTime(150 + (proximity * 800), audioCtx.currentTime, 0.1);
+        mainGain.gain.setTargetAtTime(0.02 + (proximity * 0.05), audioCtx.currentTime, 0.1);
+
+        if (dist < 40) {
+            playPing(); 
+            moveTarget();
         }
+    }
+    requestAnimationFrame(update);
+}
 
         function handleLocation(position) {
-            const { latitude, longitude, accuracy } = position.coords;
-            status.innerText = accuracy < 15 ? "CONNECTION: GOOD" : "CONNECTION: POOR";
-            status.style.color = accuracy < 15 ? "#00ff88" : "#ff4444";
+    const { latitude, longitude, accuracy } = position.coords;
+    
+    status.innerText = accuracy < 15 ? "CONNECTION: GOOD" : "CONNECTION: POOR";
+    status.style.color = accuracy < 15 ? "#00ff88" : "#ff4444";
 
-            if (!originCoords) {
-                originCoords = { lat: latitude, lng: longitude };
-                return;
-            }
+    if (!originCoords) {
+        originCoords = { lat: latitude, lng: longitude };
+        return;
+    }
 
-            const dy = (originCoords.lat - latitude) * SENSITIVITY;
-            const dx = (longitude - originCoords.lng) * SENSITIVITY;
-            playerPos.x = (window.innerWidth / 2) + dx;
-            playerPos.y = (window.innerHeight / 2) + dy;
-            player.style.left = `${playerPos.x}px`;
-            player.style.top = `${playerPos.y}px`;
+    // Calculate Raw Position
+    const dy = (originCoords.lat - latitude) * SENSITIVITY;
+    const dx = (longitude - originCoords.lng) * SENSITIVITY;
 
-            const currentDist = Math.sqrt(Math.pow(playerPos.x - targetPos.x, 2) + Math.pow(playerPos.y - targetPos.y, 2));
-            if (currentDist < lastDist - 1.5) { 
-                playPing();
-            }
-            lastDist = currentDist;
-        }
+    // We store the "Jumpy" GPS data here
+    rawGPSPos.x = (window.innerWidth / 2) + dx;
+    rawGPSPos.y = (window.innerHeight / 2) + dy;
+
+    // Ping Logic
+    const currentDist = Math.sqrt(Math.pow(playerPos.x - targetPos.x, 2) + Math.pow(playerPos.y - targetPos.y, 2));
+    if (currentDist < lastDist - 1.5) { 
+        playPing();
+    }
+    lastDist = currentDist;
+}
 
         startBtn.addEventListener('click', () => {
             initAudio();
