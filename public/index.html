@@ -71,7 +71,7 @@
         let originCoords = null;
         let lastDist = 999999;
         let noiseOffset = 0;
-        const SENSITIVITY = 2500000; // High sensitivity for small rooms
+        const SENSITIVITY = 250000; // High sensitivity for small rooms
         const SMOOTHING = 0.08;      // Lower = smoother but "laggier", Higher = snappier
         let rawGPSPos = { x: window.innerWidth/2, y: window.innerHeight/2 };
 
@@ -209,7 +209,7 @@
         }
 
         startBtn.addEventListener('click', () => {
-            initAudio();
+            initAngelicAudio(); // Matches the function name you defined earlier
             moveTarget();
             if ("geolocation" in navigator) {
                 navigator.geolocation.watchPosition(handleLocation, null, {
