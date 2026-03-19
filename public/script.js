@@ -1,224 +1,239 @@
+//html elements
+const tiltToggle = document.getElementById('tilt-toggle');
+const player = document.getElementById('player');
+const target = document.getElementById('target');
+const startBtn = document.getElementById('start-btn');
+const overlay = document.getElementById('overlay');
+const status = document.getElementById('status');
+const endlessToggle = document.getElementById('endless-toggle');
 
-        //html elements
-        const tiltToggle = document.getElementById('tilt-toggle');
-        const player = document.getElementById('player');
-        const target = document.getElementById('target');
-        const startBtn = document.getElementById('start-btn');
-        const overlay = document.getElementById('overlay');
-        const status = document.getElementById('status');
-        const endlessToggle = document.getElementById('endless-toggle');
+//variables
+let playerPos = { x: window.innerWidth/2, y: window.innerHeight/2 };
+let targetPos = { x: 0, y: 0 };
+let rawGPSPos = { x: window.innerWidth/2, y: window.innerHeight/2 };
+let tiltOffset = { x: 0, y: 0 }; // NEW: For tilt playtesting
+let originCoords = null;
+let noiseOffset = 0;
 
-        //variables
-        let playerPos = { x: window.innerWidth/2, y: window.innerHeight/2 };
-        let targetPos = { x: 0, y: 0 };
-        let rawGPSPos = { x: window.innerWidth/2, y: window.innerHeight/2 };
-        let tiltOffset = { x: 0, y: 0 }; // NEW: For tilt playtesting
-        let originCoords = null;
-        let noiseOffset = 0;
+const SENSITIVITY = 1000000; 
+const SMOOTHING = 0.08;      
 
-        const SENSITIVITY = 1000000; 
-        const SMOOTHING = 0.08;      
+//player var
+const PLAYER_SIZE = 30; 
+const SUCCESS_DIST = 45; 
+let isInsideTarget = false;
 
-        //player var
-        const PLAYER_SIZE = 30; 
-        const SUCCESS_DIST = 45; 
-        let isInsideTarget = false;
+let audioCtx, filter, mainGain;
+let oscillators = [];
 
-        let audioCtx, filter, mainGain;
-        let oscillators = [];
+//tilt for dev
+function handleTilt(e) {
+    if (tiltToggle.checked) {
+        tiltOffset.x += e.gamma * 0.5; 
+        tiltOffset.y += e.beta * 0.5;
+    }
+}
 
-        //tilt for dev
-        function handleTilt(e) {
-            if (tiltToggle.checked) {
-                tiltOffset.x += e.gamma * 0.5; 
-                tiltOffset.y += e.beta * 0.5;
-            }
-        }
+//tilt reset
+tiltToggle.addEventListener('change', () => {
+    if (!tiltToggle.checked) {
+        tiltOffset = { x: 0, y: 0 };
+    }
+});
 
-        //tilt reset
-        tiltToggle.addEventListener('change', () => {
-            if (!tiltToggle.checked) {
-                tiltOffset = { x: 0, y: 0 };
-            }
-        });
+// Only works on Android/Chrome. iOS does not support the Vibration API in the browser.
+function triggerHaptics() {
+    if ("vibrate" in navigator) {
+        navigator.vibrate([100, 50, 100]); 
+    }
+}
 
-        // Only works on Android/Chrome. iOS does not support the Vibration API in the browser.
-        function triggerHaptics() {
-            if ("vibrate" in navigator) {
-                navigator.vibrate([100, 50, 100]); 
-            }
-        }
+// ping
+function playSuccessPing() {
+    if (!audioCtx) return;
+    const pingOsc = audioCtx.createOscillator();
+    const pingGain = audioCtx.createGain();
 
-        // ping
-        function playSuccessPing() {
-            if (!audioCtx) return;
-            const pingOsc = audioCtx.createOscillator();
-            const pingGain = audioCtx.createGain();
+    //success sounds
+    pingOsc.type = 'sine';
+    pingOsc.frequency.setValueAtTime(1046.50, audioCtx.currentTime); 
+    
+    pingGain.gain.setValueAtTime(0, audioCtx.currentTime);
+    pingGain.gain.linearRampToValueAtTime(0.2, audioCtx.currentTime + 0.02);
+    pingGain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.8);
 
-            //success sounds
-            pingOsc.type = 'sine';
-            pingOsc.frequency.setValueAtTime(1046.50, audioCtx.currentTime); 
-            
-            pingGain.gain.setValueAtTime(0, audioCtx.currentTime);
-            pingGain.gain.linearRampToValueAtTime(0.2, audioCtx.currentTime + 0.02);
-            pingGain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.8);
+    pingOsc.connect(pingGain);
+    pingGain.connect(audioCtx.destination);
 
-            pingOsc.connect(pingGain);
-            pingGain.connect(audioCtx.destination);
+    pingOsc.start();
+    pingOsc.stop(audioCtx.currentTime + 0.8);
+}
 
-            pingOsc.start();
-            pingOsc.stop(audioCtx.currentTime + 0.8);
-        }
+function initAngelicAudio() {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    filter = audioCtx.createBiquadFilter();
+    mainGain = audioCtx.createGain();
 
-        function initAngelicAudio() {
-            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            filter = audioCtx.createBiquadFilter();
-            mainGain = audioCtx.createGain();
+    // ajust pitch here
+    const harmonics = [1.0, 1.5, 2.0]; 
+    harmonics.forEach((ratio, index) => {
+        let osc = audioCtx.createOscillator();
+        let oscGain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = 220 * ratio; 
+        oscGain.gain.value = 0.15 / (index + 1); 
+        osc.connect(oscGain);
+        oscGain.connect(filter);
+        oscillators.push(osc);
+        osc.start();
+    });
 
-            // ajust pitch here
-            const harmonics = [1.0, 1.5, 2.0]; 
-            harmonics.forEach((ratio, index) => {
-                let osc = audioCtx.createOscillator();
-                let oscGain = audioCtx.createGain();
-                osc.type = 'sine';
-                osc.frequency.value = 220 * ratio; 
-                oscGain.gain.value = 0.15 / (index + 1); 
-                osc.connect(oscGain);
-                oscGain.connect(filter);
-                oscillators.push(osc);
-                osc.start();
-            });
+    filter.type = 'lowpass';
+    filter.frequency.value = 600; 
+    
+    //and volume here
+    mainGain.gain.value = 0.5; 
 
-            filter.type = 'lowpass';
-            filter.frequency.value = 600; 
-            
-            //and volume here
-            mainGain.gain.value = 0.5; 
+    filter.connect(mainGain);
+    mainGain.connect(audioCtx.destination);
+}
 
-            filter.connect(mainGain);
-            mainGain.connect(audioCtx.destination);
-        }
+//from pendulum
+function handleTilt(e) {
+    if (tiltToggle && tiltToggle.checked) {
+        tiltOffset.x += e.gamma * 0.5; 
+        tiltOffset.y += e.beta * 0.5;
+    }
+}
 
-        //from pendulum
-        function handleTilt(e) {
-            if (tiltToggle && tiltToggle.checked) {
-                tiltOffset.x += e.gamma * 0.5; 
-                tiltOffset.y += e.beta * 0.5;
-            }
-        }
+//endless movment
+function moveTarget() {
+    const padding = 50;
+    targetPos.x = Math.random() * (window.innerWidth - (padding * 2)) + padding;
+    targetPos.y = Math.random() * (window.innerHeight - (padding * 2)) + padding;
+    target.style.left = `${targetPos.x}px`;
+    target.style.top = `${targetPos.y}px`;
+}
 
-        //endless movment
-        function moveTarget() {
-            const padding = 50;
-            targetPos.x = Math.random() * (window.innerWidth - (padding * 2)) + padding;
-            targetPos.y = Math.random() * (window.innerHeight - (padding * 2)) + padding;
-            target.style.left = `${targetPos.x}px`;
-            target.style.top = `${targetPos.y}px`;
-        }
+//endless movment
+function update() {
+    if (endlessToggle.checked) {
+        noiseOffset += 0.005;
+        let nextX = targetPos.x + Math.sin(noiseOffset) * 0.9;
+        let nextY = targetPos.y + Math.cos(noiseOffset * 0.7) * 0.9;
+        const pad = 40;
+        if (nextX > pad && nextX < window.innerWidth - pad) targetPos.x = nextX;
+        if (nextY > pad && nextY < window.innerHeight - pad) targetPos.y = nextY;
+        target.style.left = `${targetPos.x}px`;
+        target.style.top = `${targetPos.y}px`;
+    }
 
-        //endless movment
-        function update() {
-            if (endlessToggle.checked) {
-                noiseOffset += 0.005;
-                let nextX = targetPos.x + Math.sin(noiseOffset) * 0.9;
-                let nextY = targetPos.y + Math.cos(noiseOffset * 0.7) * 0.9;
-                const pad = 40;
-                if (nextX > pad && nextX < window.innerWidth - pad) targetPos.x = nextX;
-                if (nextY > pad && nextY < window.innerHeight - pad) targetPos.y = nextY;
-                target.style.left = `${targetPos.x}px`;
-                target.style.top = `${targetPos.y}px`;
-            }
+    
+    //player movement, restricted
+    let combinedTargetX = rawGPSPos.x + tiltOffset.x;
+    let combinedTargetY = rawGPSPos.y + tiltOffset.y;
 
-            
-            //player movement, restricted
-            let combinedTargetX = rawGPSPos.x + tiltOffset.x;
-            let combinedTargetY = rawGPSPos.y + tiltOffset.y;
+    let desiredX = playerPos.x + (combinedTargetX - playerPos.x) * SMOOTHING;
+    let desiredY = playerPos.y + (combinedTargetY - playerPos.y) * SMOOTHING;
 
-            let desiredX = playerPos.x + (combinedTargetX - playerPos.x) * SMOOTHING;
-            let desiredY = playerPos.y + (combinedTargetY - playerPos.y) * SMOOTHING;
+    playerPos.x = Math.max(15, Math.min(window.innerWidth - 15, desiredX));
+    playerPos.y = Math.max(15, Math.min(window.innerHeight - 15, desiredY));
 
-            playerPos.x = Math.max(15, Math.min(window.innerWidth - 15, desiredX));
-            playerPos.y = Math.max(15, Math.min(window.innerHeight - 15, desiredY));
+    player.style.left = `${playerPos.x}px`;
+    player.style.top = `${playerPos.y}px`;
 
-            player.style.left = `${playerPos.x}px`;
-            player.style.top = `${playerPos.y}px`;
+    playerPos.x = Math.max(PLAYER_SIZE, Math.min(window.innerWidth - PLAYER_SIZE, desiredX));
+    playerPos.y = Math.max(PLAYER_SIZE, Math.min(window.innerHeight - PLAYER_SIZE, desiredY));
 
-            playerPos.x = Math.max(PLAYER_SIZE, Math.min(window.innerWidth - PLAYER_SIZE, desiredX));
-            playerPos.y = Math.max(PLAYER_SIZE, Math.min(window.innerHeight - PLAYER_SIZE, desiredY));
+    player.style.left = `${playerPos.x}px`;
+    player.style.top = `${playerPos.y}px`;
+    
+    //sound, thank you thomas
+    if (oscillators.length > 0) {
+        const dist = Math.sqrt(Math.pow(playerPos.x - targetPos.x, 2) + Math.pow(playerPos.y - targetPos.y, 2));
+        const proximity = Math.max(0, 1 - (dist / 600)); 
 
-            player.style.left = `${playerPos.x}px`;
-            player.style.top = `${playerPos.y}px`;
-            
-            //sound, thank you thomas
-            if (oscillators.length > 0) {
-                const dist = Math.sqrt(Math.pow(playerPos.x - targetPos.x, 2) + Math.pow(playerPos.y - targetPos.y, 2));
-                const proximity = Math.max(0, 1 - (dist / 600)); 
+        const baseFreq = 220 + (proximity * 220);
+        oscillators[0].frequency.setTargetAtTime(baseFreq, audioCtx.currentTime, 0.2);
+        oscillators[1].frequency.setTargetAtTime(baseFreq * 1.5, audioCtx.currentTime, 0.2);
+        oscillators[2].frequency.setTargetAtTime(baseFreq * 2.0, audioCtx.currentTime, 0.2);
 
-                const baseFreq = 220 + (proximity * 220);
-                oscillators[0].frequency.setTargetAtTime(baseFreq, audioCtx.currentTime, 0.2);
-                oscillators[1].frequency.setTargetAtTime(baseFreq * 1.5, audioCtx.currentTime, 0.2);
-                oscillators[2].frequency.setTargetAtTime(baseFreq * 2.0, audioCtx.currentTime, 0.2);
+        filter.frequency.setTargetAtTime(400 + (proximity * 3000), audioCtx.currentTime, 0.2);
+        mainGain.gain.setTargetAtTime(0.3 + (proximity * 0.6), audioCtx.currentTime, 0.2);
 
-                filter.frequency.setTargetAtTime(400 + (proximity * 3000), audioCtx.currentTime, 0.2);
-                mainGain.gain.setTargetAtTime(0.3 + (proximity * 0.6), audioCtx.currentTime, 0.2);
-
-                if (dist < SUCCESS_DIST) {
-                    if (!isInsideTarget) {
-                        if (!endlessToggle.checked) {
-                            playSuccessPing();
-                            moveTarget();
-                        }
-                        triggerHaptics();
-                        isInsideTarget = true;
-                        player.style.boxShadow = "0 0 40px #fff, 0 0 80px #4db8ff";
-                    }
-                } else {
-                    isInsideTarget = false;
-                    player.style.boxShadow = "0 0 15px rgba(255,255,255,0.4)";
+        if (dist < SUCCESS_DIST) {
+            if (!isInsideTarget) {
+                if (!endlessToggle.checked) {
+                    playSuccessPing();
+                    moveTarget();
                 }
+                triggerHaptics();
+                isInsideTarget = true;
+                player.style.boxShadow = "0 0 40px #fff, 0 0 80px #4db8ff";
             }
-            requestAnimationFrame(update);
+        } else {
+            isInsideTarget = false;
+            player.style.boxShadow = "0 0 15px rgba(255,255,255,0.4)";
         }
+    }
+    requestAnimationFrame(update);
+}
 
-        //connection
-        function handleLocation(position) {
-            const { latitude, longitude, accuracy } = position.coords;
-            status.innerText = accuracy < 15 ? "CONNECTION: GOOD" : "CONNECTION: POOR";
-            status.style.color = accuracy < 15 ? "#00ff88" : "#ff4444";
+//connection
+function handleLocation(position) {
+    const { latitude, longitude, accuracy } = position.coords;
+    status.innerText = accuracy < 15 ? "CONNECTION: GOOD" : "CONNECTION: POOR";
+    status.style.color = accuracy < 15 ? "#00ff88" : "#ff4444";
 
-            if (!originCoords) {
-                originCoords = { lat: latitude, lng: longitude };
-                return;
-            }
+    if (!originCoords) {
+        originCoords = { lat: latitude, lng: longitude };
+        return;
+    }
 
-            const dy = (originCoords.lat - latitude) * SENSITIVITY;
-            const dx = (longitude - originCoords.lng) * SENSITIVITY;
+    const dy = (originCoords.lat - latitude) * SENSITIVITY;
+    const dx = (longitude - originCoords.lng) * SENSITIVITY;
 
-            rawGPSPos.x = (window.innerWidth / 2) + dx;
-            rawGPSPos.y = (window.innerHeight / 2) + dy;
-        }
+    rawGPSPos.x = (window.innerWidth / 2) + dx;
+    rawGPSPos.y = (window.innerHeight / 2) + dy;
+}
 
-        //thanks gemini
-        startBtn.addEventListener('click', () => {
-            initAngelicAudio(); 
-            moveTarget();
+//thanks gemini
+startBtn.addEventListener('click', async () => {
+    // 1. Initialize the Audio Engine
+    initAngelicAudio();
 
-            // 1. Request Permission for Tilt (Required for iOS)
-            if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-                DeviceOrientationEvent.requestPermission().then(res => {
-                    if (res === 'granted') window.addEventListener('deviceorientation', handleTilt);
-                });
-            } else {
+    // 2. iOS FIX: Explicitly resume the context if it's suspended
+    if (audioCtx && audioCtx.state === 'suspended') {
+        await audioCtx.resume();
+    }
+
+    moveTarget();
+
+    // 3. Request Permission for Tilt (Required for iOS)
+    if (typeof DeviceOrientationEvent !== 'undefined' && 
+        typeof DeviceOrientationEvent.requestPermission === 'function') {
+        
+        try {
+            const res = await DeviceOrientationEvent.requestPermission();
+            if (res === 'granted') {
                 window.addEventListener('deviceorientation', handleTilt);
             }
+        } catch (err) {
+            console.error("DeviceOrientation permission denied:", err);
+        }
+    } else {
+        // Non-iOS 13+ devices or Android
+        window.addEventListener('deviceorientation', handleTilt);
+    }
 
-            // 2. Start GPS
-            if ("geolocation" in navigator) {
-                navigator.geolocation.watchPosition(handleLocation, null, {
-                    enableHighAccuracy: true,
-                    maximumAge: 0
-                });
-            }
-            overlay.style.display = 'none';
-            requestAnimationFrame(update);
+    // 4. Start GPS
+    if ("geolocation" in navigator) {
+        navigator.geolocation.watchPosition(handleLocation, null, {
+            enableHighAccuracy: true,
+            maximumAge: 0
         });
+    }
+
+    overlay.style.display = 'none';
+    requestAnimationFrame(update);
+});
