@@ -39,18 +39,13 @@
 <body>
 
     <div id="overlay">
-        <h2>Developer Test Mode</h2>
-        <p style="opacity: 0.6; margin-bottom: 20px;">Target is visible for calibration.</p>
-        <button id="start-btn">Start Test</button>
+        <h2>Finding space</h2>
+        <p style="opacity: 0.6; margin-bottom: 20px;">Play this game outside. Turn your volume up. Put your phone in your pocket. </p>
+        <button id="start-btn">I understand</button>
     </div>
 
     <div id="ui-layer">
         <div id="status">Syncing GPS...</div>
-    </div>
-
-    <div class="controls">
-        <label style="color: #888; font-size: 11px;">Endless Mode</label>
-        <input type="checkbox" id="endless-toggle">
     </div>
 
     <div id="game-container">
@@ -58,7 +53,20 @@
         <div id="target" class="cube"></div>
     </div>
 
+    <div class="controls">
+        <div style="margin-bottom: 8px;">
+            <label style="color: #888; font-size: 11px;">Tilt Steering</label>
+            <input type="checkbox" id="tilt-toggle">
+        </div>
+        <div>
+            <label style="color: #888; font-size: 11px;">Endless Mode</label>
+            <input type="checkbox" id="endless-toggle">
+        </div>
+    </div>
+
     <script>
+        const tiltToggle = document.getElementById('tilt-toggle');
+
         const player = document.getElementById('player');
         const target = document.getElementById('target');
         const startBtn = document.getElementById('start-btn');
@@ -82,6 +90,21 @@
 
         let audioCtx, filter, mainGain;
         let oscillators = [];
+
+        function handleTilt(e) {
+            // Only apply tilt if the toggle is ON
+            if (tiltToggle.checked) {
+                tiltOffset.x += e.gamma * 0.5; 
+                tiltOffset.y += e.beta * 0.5;
+            }
+        }
+
+        // Add a listener to reset tilt when the toggle is turned off
+        tiltToggle.addEventListener('change', () => {
+            if (!tiltToggle.checked) {
+                tiltOffset = { x: 0, y: 0 }; // Snaps back to actual GPS position
+            }
+        });
 
         function triggerHaptics() {
             // Only works on Android/Chrome. iOS does not support the Vibration API in the browser.
@@ -159,13 +182,11 @@
             // 1. Endless Target Movement (with screen clamping)
             if (endlessToggle.checked) {
                 noiseOffset += 0.005;
-                let nextX = targetPos.x + Math.sin(noiseOffset) * 0.9; // Slightly faster drift
+                let nextX = targetPos.x + Math.sin(noiseOffset) * 0.9;
                 let nextY = targetPos.y + Math.cos(noiseOffset * 0.7) * 0.9;
-                
                 const pad = 40;
                 if (nextX > pad && nextX < window.innerWidth - pad) targetPos.x = nextX;
                 if (nextY > pad && nextY < window.innerHeight - pad) targetPos.y = nextY;
-                
                 target.style.left = `${targetPos.x}px`;
                 target.style.top = `${targetPos.y}px`;
             }
@@ -196,7 +217,6 @@
                 const dist = Math.sqrt(Math.pow(playerPos.x - targetPos.x, 2) + Math.pow(playerPos.y - targetPos.y, 2));
                 const proximity = Math.max(0, 1 - (dist / 600)); 
 
-                // Sound Engine (Loud & Angelic)
                 const baseFreq = 220 + (proximity * 220);
                 oscillators[0].frequency.setTargetAtTime(baseFreq, audioCtx.currentTime, 0.2);
                 oscillators[1].frequency.setTargetAtTime(baseFreq * 1.5, audioCtx.currentTime, 0.2);
@@ -205,21 +225,19 @@
                 filter.frequency.setTargetAtTime(400 + (proximity * 3000), audioCtx.currentTime, 0.2);
                 mainGain.gain.setTargetAtTime(0.3 + (proximity * 0.6), audioCtx.currentTime, 0.2);
 
-                // 4. Hit Detection Logic
                 if (dist < SUCCESS_DIST) {
                     if (!isInsideTarget) {
-                        // Actions that happen once when you enter the box
                         if (!endlessToggle.checked) {
                             playSuccessPing();
                             moveTarget();
                         }
                         triggerHaptics();
                         isInsideTarget = true;
-                        player.style.boxShadow = "0 0 40px #fff, 0 0 80px #4db8ff"; // Glow boost
+                        player.style.boxShadow = "0 0 40px #fff, 0 0 80px #4db8ff";
                     }
                 } else {
                     isInsideTarget = false;
-                    player.style.boxShadow = "0 0 15px rgba(255,255,255,0.4)"; // Reset glow
+                    player.style.boxShadow = "0 0 15px rgba(255,255,255,0.4)";
                 }
             }
             requestAnimationFrame(update);
