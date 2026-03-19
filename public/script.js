@@ -1,5 +1,6 @@
-       const tiltToggle = document.getElementById('tilt-toggle');
 
+        //html elements
+        const tiltToggle = document.getElementById('tilt-toggle');
         const player = document.getElementById('player');
         const target = document.getElementById('target');
         const startBtn = document.getElementById('start-btn');
@@ -7,6 +8,7 @@
         const status = document.getElementById('status');
         const endlessToggle = document.getElementById('endless-toggle');
 
+        //variables
         let playerPos = { x: window.innerWidth/2, y: window.innerHeight/2 };
         let targetPos = { x: 0, y: 0 };
         let rawGPSPos = { x: window.innerWidth/2, y: window.innerHeight/2 };
@@ -17,44 +19,44 @@
         const SENSITIVITY = 1000000; 
         const SMOOTHING = 0.08;      
 
-        const PLAYER_SIZE = 30; // Half-width of the player cube
-        const SUCCESS_DIST = 45; // Distance to trigger target hit
+        //player var
+        const PLAYER_SIZE = 30; 
+        const SUCCESS_DIST = 45; 
         let isInsideTarget = false;
 
         let audioCtx, filter, mainGain;
         let oscillators = [];
 
+        //tilt for dev
         function handleTilt(e) {
-            // Only apply tilt if the toggle is ON
             if (tiltToggle.checked) {
                 tiltOffset.x += e.gamma * 0.5; 
                 tiltOffset.y += e.beta * 0.5;
             }
         }
 
+        //tilt reset
         tiltToggle.addEventListener('change', () => {
             if (!tiltToggle.checked) {
-                // This clears the 'tilt memory' so the player 
-                // glides back to their real GPS coordinates
                 tiltOffset = { x: 0, y: 0 };
             }
         });
 
+        // Only works on Android/Chrome. iOS does not support the Vibration API in the browser.
         function triggerHaptics() {
-            // Only works on Android/Chrome. iOS does not support the Vibration API in the browser.
             if ("vibrate" in navigator) {
                 navigator.vibrate([100, 50, 100]); 
             }
         }
 
-        // --- AUDIO: SUCCESS PING ---
+        // ping
         function playSuccessPing() {
             if (!audioCtx) return;
             const pingOsc = audioCtx.createOscillator();
             const pingGain = audioCtx.createGain();
 
+            //success sounds
             pingOsc.type = 'sine';
-            // High-pitched "Angelic" Success Note (C6)
             pingOsc.frequency.setValueAtTime(1046.50, audioCtx.currentTime); 
             
             pingGain.gain.setValueAtTime(0, audioCtx.currentTime);
@@ -73,7 +75,7 @@
             filter = audioCtx.createBiquadFilter();
             mainGain = audioCtx.createGain();
 
-            // PITCH 2X: Base harmonic starts at 220Hz (A3) instead of 110Hz
+            // ajust pitch here
             const harmonics = [1.0, 1.5, 2.0]; 
             harmonics.forEach((ratio, index) => {
                 let osc = audioCtx.createOscillator();
@@ -90,23 +92,22 @@
             filter.type = 'lowpass';
             filter.frequency.value = 600; 
             
-            // GAIN 10X: Base set to 0.4 (was 0.04)
+            //and volume here
             mainGain.gain.value = 0.5; 
 
             filter.connect(mainGain);
             mainGain.connect(audioCtx.destination);
         }
 
+        //from pendulum
         function handleTilt(e) {
-            // CRITICAL: Only update the offset if the toggle is actually checked
             if (tiltToggle && tiltToggle.checked) {
-                // Gamma (left/right) and Beta (front/back)
-                // Adjust these multipliers (0.5) to change steering speed
                 tiltOffset.x += e.gamma * 0.5; 
                 tiltOffset.y += e.beta * 0.5;
             }
         }
 
+        //endless movment
         function moveTarget() {
             const padding = 50;
             targetPos.x = Math.random() * (window.innerWidth - (padding * 2)) + padding;
@@ -115,8 +116,8 @@
             target.style.top = `${targetPos.y}px`;
         }
 
+        //endless movment
         function update() {
-            // 1. Endless Target Movement (with screen clamping)
             if (endlessToggle.checked) {
                 noiseOffset += 0.005;
                 let nextX = targetPos.x + Math.sin(noiseOffset) * 0.9;
@@ -129,7 +130,7 @@
             }
 
             
-            // 2. Player Movement with Screen Clamping
+            //player movement, restricted
             let combinedTargetX = rawGPSPos.x + tiltOffset.x;
             let combinedTargetY = rawGPSPos.y + tiltOffset.y;
 
@@ -142,14 +143,13 @@
             player.style.left = `${playerPos.x}px`;
             player.style.top = `${playerPos.y}px`;
 
-            // Strict boundary enforcement: Screen width/height minus half player size
             playerPos.x = Math.max(PLAYER_SIZE, Math.min(window.innerWidth - PLAYER_SIZE, desiredX));
             playerPos.y = Math.max(PLAYER_SIZE, Math.min(window.innerHeight - PLAYER_SIZE, desiredY));
 
             player.style.left = `${playerPos.x}px`;
             player.style.top = `${playerPos.y}px`;
             
-            // 3. Audio & Haptics Logic
+            //sound, thank you thomas
             if (oscillators.length > 0) {
                 const dist = Math.sqrt(Math.pow(playerPos.x - targetPos.x, 2) + Math.pow(playerPos.y - targetPos.y, 2));
                 const proximity = Math.max(0, 1 - (dist / 600)); 
@@ -180,6 +180,7 @@
             requestAnimationFrame(update);
         }
 
+        //connection
         function handleLocation(position) {
             const { latitude, longitude, accuracy } = position.coords;
             status.innerText = accuracy < 15 ? "CONNECTION: GOOD" : "CONNECTION: POOR";
@@ -197,8 +198,9 @@
             rawGPSPos.y = (window.innerHeight / 2) + dy;
         }
 
+        //thanks gemini
         startBtn.addEventListener('click', () => {
-            initAngelicAudio(); // Corrected function name
+            initAngelicAudio(); 
             moveTarget();
 
             // 1. Request Permission for Tilt (Required for iOS)
