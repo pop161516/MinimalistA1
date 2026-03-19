@@ -99,10 +99,11 @@
             }
         }
 
-        // Add a listener to reset tilt when the toggle is turned off
         tiltToggle.addEventListener('change', () => {
             if (!tiltToggle.checked) {
-                tiltOffset = { x: 0, y: 0 }; // Snaps back to actual GPS position
+                // This clears the 'tilt memory' so the player 
+                // glides back to their real GPS coordinates
+                tiltOffset = { x: 0, y: 0 };
             }
         });
 
@@ -164,10 +165,13 @@
         }
 
         function handleTilt(e) {
-            // This allows you to "steer" the player while sitting down
-            // Gamma is Left/Right tilt, Beta is Front/Back tilt
-            tiltOffset.x += e.gamma * 0.5; 
-            tiltOffset.y += e.beta * 0.5;
+            // CRITICAL: Only update the offset if the toggle is actually checked
+            if (tiltToggle && tiltToggle.checked) {
+                // Gamma (left/right) and Beta (front/back)
+                // Adjust these multipliers (0.5) to change steering speed
+                tiltOffset.x += e.gamma * 0.5; 
+                tiltOffset.y += e.beta * 0.5;
+            }
         }
 
         function moveTarget() {
