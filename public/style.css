@@ -1,5 +1,5 @@
 body { margin: 0; overflow: hidden; background: #050505; font-family: 'Helvetica Neue', sans-serif; touch-action: none; color: #666; }
-#game-container { width: 100vw; height: 100vh; position: relative; }
+#game-container { width: 100vw; height: 100vh; position: relative; cursor: none;}
 
 .cube { position: absolute; width: 30px; height: 30px; border-radius: 50%; transform: translate(-50%, -50%); }
 

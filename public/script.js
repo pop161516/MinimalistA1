@@ -145,11 +145,15 @@ function update() {
 
         if (dist < SUCCESS_DIST) {
             if (!isInsideTarget) {
+                // 1. Logic for Standard vs Endless
                 if (!endlessToggle.checked) {
                     playSuccessPing();
                     moveTarget();
                 }
-                triggerHaptics();
+
+                // 2. TRIGGER THE VIBRATION HERE
+                triggerHaptics(); 
+
                 isInsideTarget = true;
                 player.style.boxShadow = "0 0 40px #fff, 0 0 80px #4db8ff";
             }
