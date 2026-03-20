@@ -23,7 +23,6 @@ body { margin: 0; overflow: hidden; background: #050505; font-family: 'Helvetica
     100% { transform: translate(-50%, -50%) scale(0.9); opacity: 0.3; }
 }
 
-/* Bottom Center Controls */
 .controls { 
     position: fixed; 
     bottom: 40px; 

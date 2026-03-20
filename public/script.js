@@ -25,14 +25,12 @@ let isInsideTarget = false;
 let audioCtx, filter, mainGain;
 let oscillators = [];
 
-// --- HIDDEN DEV MODE LOGIC ---
-// Double tap to show/hide the control panel
+// DEV MODE
 let lastTap = 0;
 document.addEventListener('touchend', (e) => {
     const currentTime = new Date().getTime();
     const tapLength = currentTime - lastTap;
     if (tapLength < 300 && tapLength > 0) {
-        // Toggle UI visibility
         const isHidden = controls.style.display === 'none' || controls.style.display === '';
         controls.style.display = isHidden ? 'flex' : 'none';
         e.preventDefault(); 
@@ -47,7 +45,6 @@ function handleTilt(e) {
     }
 }
 
-// Reset tilt if unticked
 tiltToggle.addEventListener('change', () => {
     if (!tiltToggle.checked) tiltOffset = { x: 0, y: 0 };
 });
@@ -118,7 +115,6 @@ function update() {
         target.style.top = `${targetPos.y}px`;
     }
 
-    // Combined GPS + Tilt
     let combinedX = rawGPSPos.x + tiltOffset.x;
     let combinedY = rawGPSPos.y + tiltOffset.y;
 
@@ -145,13 +141,11 @@ function update() {
 
         if (dist < SUCCESS_DIST) {
             if (!isInsideTarget) {
-                // 1. Logic for Standard vs Endless
                 if (!endlessToggle.checked) {
                     playSuccessPing();
                     moveTarget();
                 }
 
-                // 2. TRIGGER THE VIBRATION HERE
                 triggerHaptics(); 
 
                 isInsideTarget = true;
@@ -182,7 +176,6 @@ startBtn.addEventListener('click', async () => {
     if (audioCtx && audioCtx.state === 'suspended') await audioCtx.resume();
     moveTarget();
 
-    // iOS Orientation Permission
     if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
         try {
             const res = await DeviceOrientationEvent.requestPermission();
