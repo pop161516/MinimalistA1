@@ -4,24 +4,53 @@ const target = document.getElementById('target');
 const startBtn = document.getElementById('start-btn');
 const overlay = document.getElementById('overlay');
 const endlessToggle = document.getElementById('endless-toggle');
+const tiltToggle = document.getElementById('tilt-toggle');
+const controls = document.querySelector('.controls');
 
 // variables
 let playerPos = { x: window.innerWidth/2, y: window.innerHeight/2 };
 let targetPos = { x: 0, y: 0 };
 let rawGPSPos = { x: window.innerWidth/2, y: window.innerHeight/2 };
+let tiltOffset = { x: 0, y: 0 }; 
 let originCoords = null;
 let noiseOffset = 0;
 
 const SENSITIVITY = 1000000; 
 const SMOOTHING = 0.08;      
 
-// player var
 const PLAYER_SIZE = 15; 
 const SUCCESS_DIST = 45; 
 let isInsideTarget = false;
 
 let audioCtx, filter, mainGain;
 let oscillators = [];
+
+// --- HIDDEN DEV MODE LOGIC ---
+// Double tap to show/hide the control panel
+let lastTap = 0;
+document.addEventListener('touchend', (e) => {
+    const currentTime = new Date().getTime();
+    const tapLength = currentTime - lastTap;
+    if (tapLength < 300 && tapLength > 0) {
+        // Toggle UI visibility
+        const isHidden = controls.style.display === 'none' || controls.style.display === '';
+        controls.style.display = isHidden ? 'flex' : 'none';
+        e.preventDefault(); 
+    }
+    lastTap = currentTime;
+});
+
+function handleTilt(e) {
+    if (tiltToggle && tiltToggle.checked) {
+        tiltOffset.x += e.gamma * 0.5; 
+        tiltOffset.y += e.beta * 0.5;
+    }
+}
+
+// Reset tilt if unticked
+tiltToggle.addEventListener('change', () => {
+    if (!tiltToggle.checked) tiltOffset = { x: 0, y: 0 };
+});
 
 function triggerHaptics() {
     if ("vibrate" in navigator) {
@@ -89,11 +118,13 @@ function update() {
         target.style.top = `${targetPos.y}px`;
     }
 
-    // smooth movement
-    playerPos.x += (rawGPSPos.x - playerPos.x) * SMOOTHING;
-    playerPos.y += (rawGPSPos.y - playerPos.y) * SMOOTHING;
+    // Combined GPS + Tilt
+    let combinedX = rawGPSPos.x + tiltOffset.x;
+    let combinedY = rawGPSPos.y + tiltOffset.y;
 
-    // screen clamping
+    playerPos.x += (combinedX - playerPos.x) * SMOOTHING;
+    playerPos.y += (combinedY - playerPos.y) * SMOOTHING;
+
     playerPos.x = Math.max(PLAYER_SIZE, Math.min(window.innerWidth - PLAYER_SIZE, playerPos.x));
     playerPos.y = Math.max(PLAYER_SIZE, Math.min(window.innerHeight - PLAYER_SIZE, playerPos.y));
 
@@ -132,30 +163,33 @@ function update() {
 
 function handleLocation(position) {
     const { latitude, longitude } = position.coords;
-
     if (!originCoords) {
         originCoords = { lat: latitude, lng: longitude };
         return;
     }
-
     const dy = (originCoords.lat - latitude) * SENSITIVITY;
     const dx = (longitude - originCoords.lng) * SENSITIVITY;
-
     rawGPSPos.x = (window.innerWidth / 2) + dx;
     rawGPSPos.y = (window.innerHeight / 2) + dy;
 }
 
 startBtn.addEventListener('click', async () => {
     initAngelicAudio();
-    if (audioCtx && audioCtx.state === 'suspended') {
-        await audioCtx.resume();
-    }
+    if (audioCtx && audioCtx.state === 'suspended') await audioCtx.resume();
     moveTarget();
+
+    // iOS Orientation Permission
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        try {
+            const res = await DeviceOrientationEvent.requestPermission();
+            if (res === 'granted') window.addEventListener('deviceorientation', handleTilt);
+        } catch (e) {}
+    } else {
+        window.addEventListener('deviceorientation', handleTilt);
+    }
+
     if ("geolocation" in navigator) {
-        navigator.geolocation.watchPosition(handleLocation, null, {
-            enableHighAccuracy: true,
-            maximumAge: 0
-        });
+        navigator.geolocation.watchPosition(handleLocation, null, { enableHighAccuracy: true, maximumAge: 0 });
     }
     overlay.style.display = 'none';
     requestAnimationFrame(update);
