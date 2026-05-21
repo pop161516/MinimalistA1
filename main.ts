@@ -1,11 +1,9 @@
-import { serve } from "https://deno.land/std@0.116.0/http/server.ts"
-import staticFiles from "https://deno.land/x/static_files@1.1.6/mod.ts"
+import { serveDir } from "jsr:@std/http/file-server";
 
-const serveFiles = (req: Request) => staticFiles ('public') ({ 
-    request: req, 
-    respondWith: (r: Response) => r 
-})
-
-serve (req => serveFiles (req), { addr: ':8000' })
-
-console.log (`Listening on http://localhost:8000/`)
+// Deno.serve automatically binds to port 8000 and is fully 
+// supported by Deno Deploy's new architecture.
+Deno.serve((req: Request) => {
+  return serveDir(req, {
+    fsRoot: "public",
+  });
+});
